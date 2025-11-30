@@ -1,15 +1,15 @@
 import psycopg2
 from datetime import datetime, timedelta
 
-DB_CONFIG = {  # These may have to be changed if your PostgreSQL information is different
+DB_CONFIG = {
     "host": "localhost",
     "database": "a1_database",
     "user": "postgres",
     "password": "postgres",
-    "port": "5432"  # Default port
+    "port": "5432"
 }
 
-TIME_FORMAT = "%Y-%m-%d %H:%M" # e.g., 2025-01-31 14:30
+TIME_FORMAT = "%Y-%m-%d %H:%M"
 
 
 def get_connection():
@@ -572,7 +572,6 @@ def add_health_metric(user):
         con = get_connection()
         cur = con.cursor()
 
-        # Assumes HealthMetric has a 'measured_at' TIMESTAMP column
         cur.execute(
             "INSERT INTO HealthMetric (member_id, height, weight, bfp, heart_rate, measured_at) "
             "VALUES (%s, %s, %s, %s, %s, NOW());",
@@ -643,7 +642,7 @@ def schedule_pt_session(user):
         print("Selected trainer not in available list.")
         return
 
-    # Final check in case something changed
+    # Final check
     if not check_trainer_and_room_availability(trainer_id, room_id, new_start, duration):
         print("No trainer/room available (conflict detected).")
         return
@@ -767,7 +766,7 @@ def register_group_class(user):
         con = get_connection()
         cur = con.cursor()
 
-        # 1. List upcoming group classes with their own capacity and current registrations
+        # 1. List upcoming group classes with their capacity and current registrations
         cur.execute(
             """
             SELECT gc.class_id,
@@ -784,13 +783,12 @@ def register_group_class(user):
         )
         classes = cur.fetchall()
 
-        if not classes:  # No upcoming classes, can't register for any
+        if not classes:
             print("No upcoming group classes available.")
             cur.close()
             con.close()
             return
         
-        # Get registration counts for all listed classes
         class_ids = [row[0] for row in classes]
         cur.execute(
             "SELECT class_id, COUNT(*) FROM ClassRegistration "
@@ -843,7 +841,6 @@ def register_group_class(user):
         
         cid, cname, scheduled_at, duration_minutes, room_id, trainer_id, class_capacity = row
 
-        # Ensure the class is in the future
         cur.execute("SELECT NOW();")
         now = cur.fetchone()[0]
         if scheduled_at < now:
@@ -863,7 +860,6 @@ def register_group_class(user):
             con.close()
             return
         
-        # Capacity based solely on GroupClass.capacity
         cur.execute(
             "SELECT COUNT(*) FROM ClassRegistration WHERE class_id = %s;",
             (class_id,)
@@ -876,11 +872,9 @@ def register_group_class(user):
             con.close()
             return
         
-        # Time window for conflict checks
         new_start = scheduled_at
         new_end = scheduled_at + timedelta(minutes=duration_minutes)
 
-        # Ensure no other group class in the same room overlaps
         cur.execute(
             "SELECT class_id, scheduled_at, duration_minutes "
             "FROM GroupClass WHERE room_id = %s AND class_id != %s;",
@@ -898,7 +892,6 @@ def register_group_class(user):
                 con.close()
                 return
         
-        # Ensure no PT session in the same room overlaps the class
         cur.execute(
             "SELECT session_at, duration_minutes FROM PTSession WHERE room_id = %s;",
             (room_id,)
@@ -915,8 +908,6 @@ def register_group_class(user):
                 con.close()
                 return
         
-        # Ensure Member times don't overlap
-        # Member's PT sessions
         cur.execute(
             "SELECT session_at, duration_minutes FROM PTSession WHERE member_id = %s;",
             (member_id,)
@@ -930,7 +921,6 @@ def register_group_class(user):
                 con.close()
                 return
             
-        # Member's other group classes
         cur.execute(
             """
             SELECT gc.class_id, gc.scheduled_at, gc.duration_minutes
@@ -952,7 +942,6 @@ def register_group_class(user):
                 con.close()
                 return
 
-        # All checks passed, try to insert registration
         try:
             cur.execute(
                 "INSERT INTO ClassRegistration (class_id, member_id) "
@@ -995,7 +984,6 @@ def member_dashboard(user):
         con = get_connection()
         cur = con.cursor()
 
-        # Latest health stats
         cur.execute(
             """
             SELECT height, weight, bfp, heart_rate, measured_at
@@ -1140,7 +1128,6 @@ def admin_log_maintenance_issue():
         return
     room_id = int(room_id_str)
 
-    # Optionally associate with equipment
     has_equipment = input("Is this for specific equipment? (y/n): ").strip().lower()
     equipment_no = None
 
@@ -1198,7 +1185,7 @@ def admin_log_maintenance_issue():
         priority = input("Priority (e.g. LOW/MEDIUM/HIGH): ").strip() or "MEDIUM"
         status = "OPEN"  # default for new tickets
 
-        # Insert ticket (room_id must NOT be null; equipment_no may be null or not)
+        # Insert ticket
         cur.execute(
             """
             INSERT INTO MaintenanceTicket (room_id, equipment_no, issue, priority, status)
@@ -1351,7 +1338,6 @@ def admin_book_room(user):
                 session_at, duration_minutes, current_room = row
                 available_rooms = get_available_rooms(session_at, duration_minutes)
 
-                # If the session already has a room, allow keeping it even if get_available_rooms didn't include it
                 if current_room is not None and current_room not in available_rooms:
                     available_rooms.append(current_room)
 
@@ -1470,10 +1456,9 @@ def admin_book_room(user):
 
 #----------ADMIN-CLASS MANAGEMENT------------
 
-def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/time, update schedules
+def admin_manage_classes(user):
     print("\n=== Manage Group Classes ===")
 
-    # Helpers for this function
     def room_exists(cur, room_id):
         cur.execute("SELECT 1 FROM Room WHERE room_id = %s;", (room_id,))
         return cur.fetchone() is not None
@@ -1483,7 +1468,6 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
         return cur.fetchone() is not None
 
     def check_room_available_excluding_class(cur, room_id, new_start, duration_minutes, exclude_class_id=None):
-        # Return true if room is available for the new interval (excludes a specific class id if given)
         new_end = new_start + timedelta(minutes=duration_minutes)
 
         cur.execute("SELECT capacity FROM Room WHERE room_id = %s;", (room_id,))
@@ -1504,7 +1488,7 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
         if concurrent_pt >= capacity:
             return False
 
-        # Check group classes in the room (exclude the one being updated if provided)
+        # Check group classes in the room
         if exclude_class_id is None:
             cur.execute(
                 "SELECT scheduled_at, duration_minutes FROM GroupClass WHERE room_id = %s;",
@@ -1525,7 +1509,6 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
         return True
 
     def check_trainer_available_excluding_class(cur, trainer_id, new_start, duration_minutes, exclude_class_id=None):
-        # Return true if trainer available for the new interval (excludes a specific class id if given)
         new_end = new_start + timedelta(minutes=duration_minutes)
 
         cur.execute("SELECT start_time, end_time FROM Trainer WHERE trainer_id = %s;", (trainer_id,))
@@ -1570,7 +1553,7 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
         print("4. Back")
         choice = input("Choose: ").strip()
 
-        if choice == "1":  # Create new class
+        if choice == "1":
             class_name = input("Class name: ").strip()
             if not class_name:
                 print("Class name required.")
@@ -1637,7 +1620,7 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
             except Exception as e:
                 print("Error creating class:", e)
 
-        elif choice == "2":  # Update existing class
+        elif choice == "2":
             class_id_str = input("Enter class ID to update: ").strip()
             if not class_id_str.isdigit():
                 print("Invalid class id.")
@@ -1751,7 +1734,6 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
                     con.close()
                     continue
 
-                # Check availability excluding this class so it won't conflict with itself
                 room_ok = check_room_available_excluding_class(
                     cur, room_id, scheduled_at, duration_minutes, exclude_class_id=class_id
                 )
@@ -1769,7 +1751,6 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
                     con.close()
                     continue
 
-                # FINALLY, update the group class
                 cur.execute(
                     "UPDATE GroupClass "
                     "SET class_name = %s, trainer_id = %s, room_id = %s, "
@@ -1784,7 +1765,7 @@ def admin_manage_classes(user):  # Define new classes, assign trainers/rooms/tim
             except Exception as e:
                 print("Error updating class:", e)
 
-        elif choice == "3":  # View classes (allow filtering)
+        elif choice == "3":  # View classes
             print("\nView classes options:")
             print("1. All classes")
             print("2. Upcoming classes")
