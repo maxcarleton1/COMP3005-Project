@@ -254,9 +254,9 @@ def register_trainer():
         user_id = cur.fetchone()[0]
 
         cur.execute(
-            "INSERT INTO Trainer (user_id, name, start_time, end_time, recurrence) "
-            "VALUES (%s, %s, %s, %s, %s);",
-            (user_id, name, start_time, end_time, recurrence)
+            "INSERT INTO Trainer (user_id, name, start_time, end_time) "
+            "VALUES (%s, %s, %s, %s);",
+            (user_id, name, start_time, end_time)
         )
 
         con.commit()
@@ -342,7 +342,7 @@ def set_trainer_availability(user):
         cur = con.cursor()
 
         cur.execute(
-            "SELECT start_time, end_time, recurrence "
+            "SELECT start_time, end_time "
             "FROM Trainer WHERE trainer_id = %s;",
             (trainer_id,)
         )
@@ -377,9 +377,9 @@ def set_trainer_availability(user):
 
         cur.execute(
             "UPDATE Trainer "
-            "SET start_time = %s, end_time = %s, recurrence = %s "
+            "SET start_time = %s, end_time = %s "
             "WHERE trainer_id = %s;",
-            (new_start, new_end, recurrence, trainer_id)
+            (new_start, new_end, trainer_id)
         )
 
         con.commit()
@@ -518,8 +518,12 @@ def set_fitness_goal(user):
 
     goal_type = input("Goal type (e.g. WEIGHT_TARGET): ").strip() or "WEIGHT_TARGET"
     target_value = input("Target value (e.g. 70): ").strip() or None
-    start_date = input("Start date (YYYY-MM-DD): ").strip() or None
-    end_date = input("End date (YYYY-MM-DD): ").strip() or None
+    start_date = input("Start date (YYYY-MM-DD): ").strip()
+    end_date = input("End date (YYYY-MM-DD): ").strip()
+
+    if not start_date or not end_date:
+        print("Start date and end date are required.")
+        return
 
     try:
         con = get_connection()
