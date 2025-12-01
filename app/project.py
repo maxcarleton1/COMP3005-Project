@@ -955,10 +955,13 @@ def register_group_class(user):
             else:
                 con.rollback()
                 print("Could not register for the class.")
-        except psycopg2.IntegrityError:
+        except psycopg2.Error as e:
             con.rollback()
-            print("Registration failed: you may already be registered or constraint violated.")
-
+            msg = str(e).lower()
+            if "class" in msg and "is full" in msg:
+                print("Registration failed: class is full (database capacity enforced).")
+            else:
+                print("Registration failed:", e)
         cur.close()
         con.close()
 
@@ -996,7 +999,6 @@ def member_dashboard(user):
         )
         health = cur.fetchone()
 
-        # Active fitness goals (end_date in the future or today)
         cur.execute(
             """
             SELECT goal_type, target_value, start_date, end_date
@@ -1009,47 +1011,36 @@ def member_dashboard(user):
         )
         goals = cur.fetchall()
 
-        # Past class count
         cur.execute(
             """
             SELECT COUNT(*)
-            FROM ClassRegistration cr
-            JOIN GroupClass gc ON cr.class_id = gc.class_id
-            WHERE cr.member_id = %s
-              AND gc.scheduled_at < NOW();
+            FROM MemberFullScheduleView
+            WHERE member_id = %s
+              AND schedule_type = 'CLASS'
+              AND end_time < NOW();
             """,
             (member_id,)
         )
         past_class_count = cur.fetchone()[0]
 
-        # Upcoming PT sessions
         cur.execute(
             """
-            SELECT session_at, duration_minutes, trainer_id, room_id
-            FROM PTSession
+            SELECT schedule_type,
+                   start_time,
+                   end_time,
+                   trainer_id,
+                   room_id,
+                   class_id,
+                   class_name
+            FROM MemberFullScheduleView
             WHERE member_id = %s
-              AND session_at >= NOW()
-            ORDER BY session_at
-            LIMIT 5;
+              AND start_time >= NOW()
+            ORDER BY start_time
+            LIMIT 10;
             """,
             (member_id,)
         )
-        upcoming_pt = cur.fetchall()
-
-        # Upcoming group classes
-        cur.execute(
-            """
-            SELECT gc.class_name, gc.scheduled_at, gc.room_id, gc.trainer_id
-            FROM ClassRegistration cr
-            JOIN GroupClass gc ON cr.class_id = gc.class_id
-            WHERE cr.member_id = %s
-              AND gc.scheduled_at >= NOW()
-            ORDER BY gc.scheduled_at
-            LIMIT 5;
-            """,
-            (member_id,)
-        )
-        upcoming_classes = cur.fetchall()
+        full_schedule = cur.fetchall()
 
         cur.close()
         con.close()
@@ -1076,23 +1067,22 @@ def member_dashboard(user):
         print("\n--- Past Group Classes Attended ---")
         print("Total past classes:", past_class_count)
 
-        print("\n--- Upcoming PT Sessions ---")
-        if upcoming_pt:
-            for s_at, dur, t_id, r_id in upcoming_pt:
-                print(f"- {s_at}, {dur} min, trainer {t_id}, room {r_id}")
+        print("\n--- Upcoming Schedule (PT Sessions + Group Classes) ---")
+        if full_schedule:
+            for (schedule_type, start_time, end_time,
+                 trainer_id, room_id, class_id, class_name) in full_schedule:
+                if schedule_type == 'PT':
+                    label = "PT Session"
+                    details = f"trainer {trainer_id}, room {room_id}"
+                else:
+                    label = f"Class '{class_name}'"
+                    details = f"trainer {trainer_id}, room {room_id}"
+                print(f"- {start_time} to {end_time}: {label} ({details})")
         else:
-            print("No upcoming PT sessions.")
-
-        print("\n--- Upcoming Group Classes ---")
-        if upcoming_classes:
-            for cname, sched, room_id, trainer_id in upcoming_classes:
-                print(f"- {cname} at {sched}, room {room_id}, trainer {trainer_id}")
-        else:
-            print("No upcoming group classes.")
+            print("No upcoming PT sessions or group classes.")
 
     except Exception as e:
         print("Error loading dashboard:", e)
-
 
 #----------ADMIN-EQUIPMENT MAINTENANCE MENU------------
 
