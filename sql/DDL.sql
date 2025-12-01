@@ -19,6 +19,8 @@ CREATE TABLE Member (
     FOREIGN KEY (member_id) REFERENCES UserAccount(user_id)
 );
 
+CREATE INDEX idx_member_member_id ON Member(member_id);
+
 CREATE TABLE Trainer (
     trainer_id   INT PRIMARY KEY,
     name         VARCHAR(255) NOT NULL,

@@ -5,7 +5,7 @@ DB_CONFIG = {
     "host": "localhost",
     "database": "a1_database",
     "user": "postgres",
-    "password": "postgres",
+    "password": "password",
     "port": "5432"
 }
 
@@ -291,7 +291,7 @@ def register_admin():
         con.commit()
         cur.close()
         con.close()
-        print("Admin registered (placeholder).")
+        print("Admin registered.")
     except Exception as e:
         print("Error registering admin:", e)
 
@@ -841,7 +841,7 @@ def register_group_class(user):
         
         cid, cname, scheduled_at, duration_minutes, room_id, trainer_id, class_capacity = row
 
-        cur.execute("SELECT NOW();")
+        cur.execute("SELECT NOW()::timestamp;")
         now = cur.fetchone()[0]
         if scheduled_at < now:
             print("Cannot register: class has already started or is in the past.")
