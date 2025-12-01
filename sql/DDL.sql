@@ -120,3 +120,84 @@ CREATE TABLE PTSession (
 	FOREIGN KEY		(trainer_id) REFERENCES Trainer(trainer_id),
 	FOREIGN KEY		(room_id) REFERENCES Room(room_id)
 );
+
+--View for complete Member schedule (group classes + PT sessions)
+CREATE VIEW MemberFullScheduleView AS
+SELECT
+    'PT'::text AS schedule_type,
+    p.member_id,
+    p.session_at AS start_time,
+    p.session_at
+        + (p.duration_minutes * INTERVAL '1 minute') AS end_time,
+    p.trainer_id,
+    t.name AS trainer_name,
+    p.room_id,
+    r.name AS room_name,
+    NULL::int  AS class_id,
+    NULL::text AS class_name
+FROM PTSession p
+JOIN Trainer t ON t.trainer_id = p.trainer_id
+JOIN Room    r ON r.room_id = p.room_id
+
+UNION ALL
+
+SELECT
+    'CLASS'::text AS schedule_type,
+    cr.member_id,
+    g.scheduled_at AS start_time,
+    g.scheduled_at
+        + (g.duration_minutes * INTERVAL '1 minute') AS end_time,
+    g.trainer_id,
+    t.name AS trainer_name,
+    g.room_id,
+    r.name AS room_name,
+    g.class_id,
+    g.class_name
+FROM ClassRegistration cr
+JOIN GroupClass g ON g.class_id = cr.class_id
+JOIN Trainer   t ON t.trainer_id = g.trainer_id
+JOIN Room      r ON r.room_id   = g.room_id;
+
+--Trigger function to enforce group class capacity
+CREATE OR REPLACE FUNCTION check_class_capacity()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS
+$$
+DECLARE
+    v_capacity   INT;
+    v_count      INT;
+BEGIN
+    SELECT capacity
+    INTO v_capacity
+    FROM GroupClass
+    WHERE class_id = NEW.class_id
+    FOR UPDATE;
+
+    IF v_capacity IS NULL THEN
+        RAISE EXCEPTION 'Class % not found or has NULL capacity', NEW.class_id;
+    END IF;
+    SELECT COUNT(*)
+    INTO v_count
+    FROM ClassRegistration
+    WHERE class_id = NEW.class_id;
+    v_count := v_count + 1;
+
+    IF v_count > v_capacity THEN
+        RAISE EXCEPTION
+            'Class % is full. Capacity=%, registrations_with_new=%',
+            NEW.class_id, v_capacity, v_count;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+--Trigger
+CREATE TRIGGER trg_check_class_capacity
+BEFORE INSERT
+ON ClassRegistration
+FOR EACH ROW
+EXECUTE PROCEDURE
+check_class_capacity();
+
