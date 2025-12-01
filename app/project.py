@@ -5,7 +5,7 @@ DB_CONFIG = {
     "host": "localhost",
     "database": "a1_database",
     "user": "postgres",
-    "password": "password",
+    "password": "postgres",
     "port": "5432"
 }
 
